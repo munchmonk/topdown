@@ -2,20 +2,21 @@
 
 import pygame
 import sys
+import math
+import random
 pygame.init()
 
 # screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
 screen = pygame.display.set_mode((100, 100))
 
-print(screen.get_size())
 
-IMG = pygame.image.load('block.png')
-rect = IMG.get_rect()
-oldcenter = rect.center
-angle = 0
-
-print(-10.7208178788, round(-10.7208178788))
-print(3.58443540759, round(3.58443540759))
+print(random.randint(0, 1))
+print(random.randint(0, 1))
+print(random.randint(0, 1))
+print(random.randint(0, 1))
+print(random.randint(0, 1))
+print(random.randint(0, 1))
+print(random.randint(0, 1))
 
 
 
