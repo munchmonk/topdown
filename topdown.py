@@ -50,13 +50,16 @@ class Bullet(pygame.sprite.Sprite):
 		self.image = pygame.transform.rotozoom(Bullet.IMG, alpha, 1)
 		self.rect = self.image.get_rect(center=oldcenter)
 		self.dx, self.dy = math.cos(alpha * math.pi / 180), -math.sin(alpha * math.pi / 180)
+		self.rect.x += int(round(self.dx * 30))
+		self.rect.y += int(round(self.dy * 30))
 
 
 	def update(self):
 		self.rect.x += int(round(self.dx * self.game.dt * Bullet.SPEED))
 		self.rect.y += int(round(self.dy * self.game.dt * Bullet.SPEED))
 
-		pygame.sprite.spritecollide(self, self.game.allzombies, True)
+		if pygame.sprite.spritecollide(self, self.game.allzombies, True):
+			self.kill()
 
 		if (self.rect.x < 0 or self.rect.right > self.game.maxwidth or self.rect.y < 0 or self.rect.bottom > self.game.maxheight or
 			pygame.sprite.spritecollide(self, self.game.allblocks, False)):
@@ -328,10 +331,11 @@ class Block(pygame.sprite.Sprite):
 
 class Game:
 	pygame.init()
+	MAXZOMBIES = 30
 
 	def __init__(self):
-		# self.screen = pygame.display.set_mode((0, 0))
-		self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+		self.screen = pygame.display.set_mode((0, 0))
+		# self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
 		self.screenwidth, self.screenheight = self.screen.get_size()
 		self.maxwidth, self.maxheight = 3000, 3000
 		self.clock = pygame.time.Clock()
@@ -363,6 +367,8 @@ class Game:
 		self.setup_joysticks()
 
 	def spawn_zombie(self):
+		if (time.time() - self.lastzombie < 0.1) or (len(self.allzombies.sprites()) > Game.MAXZOMBIES):
+			return
 		zombie = None
 		while not zombie:
 			zombie = Zombie(self, random.randint(1, self.maxwidth - 1), random.randint(1, self.maxheight - 1))
@@ -391,9 +397,6 @@ class Game:
 		Block(self, 1550, 1150)
 		Block(self, 2950, 2950)
 
-		for i in range(10):
-			self.spawn_zombie()
-
 	def setup_joysticks(self):
 		pygame.joystick.init()
 
@@ -420,8 +423,7 @@ class Game:
 			self.draw()
 
 	def update(self):
-		if time.time() - self.lastzombie > 0.2:
-			self.spawn_zombie()
+		self.spawn_zombie()
 		self.allsprites.update()
 		self.camera.update(self.find_player(0))
 
