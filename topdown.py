@@ -1,5 +1,13 @@
 #!/Library/Frameworks/Python.framework/Versions/2.7/bin/python2.7
 
+
+"""
+todo
+	erratic behaviour of zombies hitting walls whilst not facing the player, so they don't seem to be walking backwards/sideways
+	blit walls instead of blocks to save memory
+"""
+
+
 import pygame
 import sys
 import math
@@ -39,11 +47,11 @@ class Wall(pygame.sprite.Sprite):
 
 class Game:
 	pygame.init()
-	MAXZOMBIES = 20
+	MAXZOMBIES = 45
 
 	def __init__(self):
 		self.screen = pygame.display.set_mode((0, 0))
-		self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+		# self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
 		self.screenwidth, self.screenheight = self.screen.get_size()
 		self.maxwidth, self.maxheight = 1500, 1200
 		self.clock = pygame.time.Clock()
@@ -85,7 +93,7 @@ class Game:
 		self.spawn_players()
 
 	def spawn_zombies(self):
-		if (time.time() - self.lastzombie < 0.1) or (len(self.allzombies.sprites()) > Game.MAXZOMBIES):
+		if (time.time() - self.lastzombie < 0.1) or (len(self.allzombies.sprites()) >= Game.MAXZOMBIES):
 			return
 		zombie = None
 		while not zombie:
@@ -273,7 +281,7 @@ class Game:
 		self.spawn_zombies()
 		self.allsprites.update()
 		self.camera.update(self.find_player(0))
-		# print('fps   ', self.clock.get_fps())
+		print('fps   ', self.clock.get_fps())
 
 	def draw(self):
 		self.screen.fill((0, 200, 0))
@@ -346,7 +354,8 @@ class Bullet(pygame.sprite.Sprite):
 
 class Zombie(pygame.sprite.Sprite):
 	IMG = pygame.image.load('zombie.png')
-	SPEED = 0.1
+	SPEED = 0.08
+	MAX_ROTATION = 5
 
 	def __init__(self, game, x, y):
 		self.game = game
@@ -422,6 +431,7 @@ class Zombie(pygame.sprite.Sprite):
 
 		return alpha
 
+	"""
 	def rotate(self):
 		alpha = self.get_angle_of_rotation()
 
@@ -453,6 +463,46 @@ class Zombie(pygame.sprite.Sprite):
 					self.image = pygame.transform.rotozoom(Zombie.IMG, alpha, 1)
 				self.rect = self.image.get_rect(center=oldcenter)	
 				self.angle = new_alpha
+	"""
+
+	def rotate(self):
+		# Idea: instead of turning the zombies instantenously, only rotate them by one degree towards the player;
+		# this saves a lot of recalculating to avoid wall collisions as they can be simpyly reverted once instead of
+		# up to 180 times per rotation per zombie
+		# This should make the zombies appear to turn more slowly in line with their character
+		alpha = self.get_angle_of_rotation()
+		if alpha and alpha != self.angle:
+			difference = alpha - self.angle
+			direction = abs(difference) / difference
+
+			# Flip direction if angle is over 180deg
+			if abs(difference) > 180:	
+				direction *= -1
+
+			# Handle cases near 0deg
+			if abs(difference) > 360 - Zombie.MAX_ROTATION:
+				direction *= (360 - abs(difference))
+			elif abs(difference) >= Zombie.MAX_ROTATION:
+				direction *= Zombie.MAX_ROTATION
+			else:
+				direction *= abs(difference)
+		else:
+			direction = 0
+
+		# Rotate
+		new_angle = (self.angle + direction) % 360
+		oldcenter = self.rect.center
+		self.image = pygame.transform.rotozoom(Zombie.IMG, new_angle, 1)
+		self.rect = self.image.get_rect(center=oldcenter)
+
+		# Revert if hitting walls
+		while pygame.sprite.spritecollide(self, self.game.allwalls, False):
+			new_angle -= (abs(direction) / direction) 
+			self.image = pygame.transform.rotozoom(Zombie.IMG, new_angle, 1)
+			self.rect = self.image.get_rect(center=oldcenter)
+
+		self.angle = new_angle
+	
 
 	def update(self):
 		self.move()
@@ -461,7 +511,7 @@ class Zombie(pygame.sprite.Sprite):
 
 class Player(pygame.sprite.Sprite):
 	IMG = pygame.image.load('player.png')
-	SPEED = 0.5
+	SPEED = 0.7
 
 	def __init__(self, game, uid, x, y):
 		self.game = game
