@@ -4,7 +4,10 @@
 """
 todo
 	erratic behaviour of zombies hitting walls whilst not facing the player, so they don't seem to be walking backwards/sideways
-	blit walls instead of blocks to save memory
+	fix player rotation (like zombie rotation) and make player smaller than walls to avoid getting stuck
+	instead of undoing the zombie rotation, move the sprite away from the wall causing the collision! unless that causes other collisions...
+	---> tile side must be > zombie tile side * sqrt(2)!!
+	--- or, since the sprite will end up being perpendicular, such a problem can't occur as the max sprite dimension is at 45°
 """
 
 
@@ -39,19 +42,34 @@ class Camera:
 class Wall(pygame.sprite.Sprite):
 	def __init__(self, game, x, y, width, height):
 		self.game = game
-		self.groups = game.allwalls
+		self.groups = game.allsprites, game.allwalls
 		pygame.sprite.Sprite.__init__(self, self.groups)
 
-		self.rect = pygame.Rect(x, y, width, height)
+		self.image = pygame.Surface((width, height))
+		self.rect = self.image.get_rect(topleft=(x, y))
+
+		# Single block walls
+		if width == height:
+			self.image.blit(Block.IMG, (0, 0))
+
+		# Horizontal walls
+		elif width > height:
+			for i in range(0, width // Block.SIZE):
+				self.image.blit(Block.IMG, (i * Block.SIZE, 0))
+
+		# Vertical walls
+		else:
+			for i in range(0, height // Block.SIZE):
+				self.image.blit(Block.IMG, (0, i * Block.SIZE))
 
 
 class Game:
 	pygame.init()
-	MAXZOMBIES = 45
+	MAXZOMBIES = 30
 
 	def __init__(self):
-		self.screen = pygame.display.set_mode((0, 0))
-		# self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+		# self.screen = pygame.display.set_mode((0, 0))
+		self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
 		self.screenwidth, self.screenheight = self.screen.get_size()
 		self.maxwidth, self.maxheight = 1500, 1200
 		self.clock = pygame.time.Clock()
@@ -86,33 +104,30 @@ class Game:
 				if pygame.sprite.spritecollide(player, self.allwalls, False):
 					player.kill()
 
-
 	def setup(self):
 		self.generate_map()
 		self.setup_joysticks()
 		self.spawn_players()
 
 	def spawn_zombies(self):
-		if (time.time() - self.lastzombie < 0.1) or (len(self.allzombies.sprites()) >= Game.MAXZOMBIES):
+		if (time.time() - self.lastzombie < 0.6) or (len(self.allzombies.sprites()) >= Game.MAXZOMBIES):
 			return
-		zombie = None
-		while not zombie:
-			zombie = Zombie(self, random.randint(1, self.maxwidth - 1), random.randint(1, self.maxheight - 1))
-			if pygame.sprite.spritecollide(zombie, self.allwalls, False):
+
+		zombie = Zombie(self, random.randint(1, self.maxwidth - 1), random.randint(1, self.maxheight - 1))
+		if pygame.sprite.spritecollide(zombie, self.allwalls, False):
 				zombie.kill()
-				zombie = None
-			for player in self.allplayers:
-				if not zombie:
-					break
-				if((self.camera.apply(zombie).right >= 0) and
-					(self.camera.apply(zombie).left <= self.screenwidth) and
-					(self.camera.apply(zombie).bottom >= 0) and
-					(self.camera.apply(zombie).top <= self.screenheight)):
-					zombie.kill()
-					zombie = None
+				return
+
+		for player in self.allplayers:
+			if((self.camera.apply(zombie).right >= 0) and
+				(self.camera.apply(zombie).left <= self.screenwidth) and
+				(self.camera.apply(zombie).bottom >= 0) and
+				(self.camera.apply(zombie).top <= self.screenheight)):
+				zombie.kill()
+				return
+
 		self.lastzombie = time.time()
-
-
+	
 	def point_in_blocks(self, x, y):
 		for block in self.allblocks:
 			if block.rect.collidepoint(x, y):
@@ -139,12 +154,8 @@ class Game:
 		self.get_vertic_wall(x, y + Block.SIZE, wall)
 		return wall
 			
-		
 	def generate_walls(self):
-		# first round - horizontal walls
 		walls = []
-		
-		
 		for j in range(self.maxheight / Block.SIZE):
 			for i in range(self.maxwidth / Block.SIZE):
 				point_x = i * Block.SIZE + Block. SIZE // 2
@@ -162,11 +173,10 @@ class Game:
 					wall = sorted(wall)
 					walls.append(wall)
 
-				# Single blocks
+				# Walls made of a single block
 				if self.point_in_blocks(point_x, point_y) and self.get_neighbours(i, j)[0] == 0:
 					walls.append([(point_x, point_y)])
 	
-
 		non_dup = []
 		for wall in walls:
 			if wall not in non_dup:
@@ -186,7 +196,6 @@ class Game:
 			# Vertical wall
 			else:
 				Wall(self, wall[0][0] - Block.SIZE // 2, wall[0][1] - Block.SIZE // 2, Block.SIZE, wall[-1][1] - wall[0][1] + Block.SIZE)
-
 	
 	def get_neighbours(self, x, y):
 		ort_neighbours, diag_neighbours = 0, 0
@@ -203,7 +212,6 @@ class Game:
 						else:
 							diag_neighbours += 1
 		return ort_neighbours + diag_neighbours, ort_neighbours, diag_neighbours
-	
 
 	def generate_map(self):
 		# Generate outer grid
@@ -226,6 +234,7 @@ class Game:
 						Block(self, point_x, point_y)
 
 
+		"change 0.005 to 0.85 to test performance"
 		# Second round, randomly spawn blocks that have one orthogonal neighbour and no diagonal ones
 		for i in range(1, self.maxwidth / Block.SIZE - 1):
 			for j in range(1, self.maxheight / Block.SIZE - 1):
@@ -233,7 +242,7 @@ class Game:
 				if self.point_in_blocks(point_x, point_y):
 					continue
 				if self.get_neighbours(i, j)[0] == 0:
-					if random.random() <= 0.005:
+					if random.random() <= 0.1:
 						Block(self, point_x, point_y)
 
 		
@@ -281,19 +290,19 @@ class Game:
 		self.spawn_zombies()
 		self.allsprites.update()
 		self.camera.update(self.find_player(0))
-		print('fps   ', self.clock.get_fps())
+		# print('fps   ', self.clock.get_fps())
 
 	def draw(self):
 		self.screen.fill((0, 200, 0))
+
 		for sprite in self.allsprites:
 			rect = self.camera.apply(sprite)
+
+			# Don't draw off-screen sprites
 			if rect.right < 0 or rect.bottom < 0 or rect.left > self.screenwidth or rect.top > self.screenheight:
 				continue
+
 			self.screen.blit(sprite.image, rect)
-
-
-
-
 		pygame.display.flip()
 
 
@@ -303,7 +312,7 @@ class Block(pygame.sprite.Sprite):
 
 	def __init__(self, game, x, y):
 		self.game = game
-		self.groups = game.allsprites, game.allblocks
+		self.groups = game.allblocks
 		pygame.sprite.Sprite.__init__(self, self.groups)
 
 		self.image = Block.IMG
@@ -312,7 +321,7 @@ class Block(pygame.sprite.Sprite):
 
 class Bullet(pygame.sprite.Sprite):
 	IMG = pygame.image.load('bullet.png')
-	SPEED = 1
+	SPEED = 1.3
 
 	def __init__(self, player, x, y):
 		self.game = player.game
@@ -366,12 +375,18 @@ class Zombie(pygame.sprite.Sprite):
 		self.rect = self.image.get_rect(topleft=(x, y))
 
 		self.angle = 0
+		self.forced_direction = [0, 0]
+		self.last_forced = 0
 
 	def get_player_coord(self):
 		player = self.game.find_player(0)
 		return player.rect.centerx, player.rect.centery
 
 	def get_dxdy(self):
+		if self.forced_direction != [0, 0] and time.time() - self.last_forced <= 1.2:
+			return self.forced_direction
+
+		self.forced_direction = [0, 0]
 		dx, dy = 0, 0
 		p_coord = self.get_player_coord()
 		delta_x = p_coord[0] - self.rect.centerx
@@ -398,96 +413,77 @@ class Zombie(pygame.sprite.Sprite):
 				self.rect.x += 1
 			while self.rect.right > self.game.maxwidth:
 				self.rect.x -= 1
-			while pygame.sprite.spritecollide(self, self.game.allwalls, False):
-				self.rect.x -= int(abs(dx) / dx)
 
+			if pygame.sprite.spritecollide(self, self.game.allwalls, False):
+				if self.forced_direction == [0, 0]:
+					if dy <= 0:
+						self.forced_direction = [0, -1]
+					else:
+						self.forced_direction = [0, 1]
+					self.last_forced = time.time()
+				while pygame.sprite.spritecollide(self, self.game.allwalls, False):
+					self.rect.x -= int(abs(dx) / dx)
+				
 		if dy:
 			self.rect.y += int(round(dy * self.game.dt * Zombie.SPEED))
 			while self.rect.y < 0:
 				self.rect.y += 1
 			while self.rect.bottom > self.game.maxheight:
 				self.rect.y -= 1
-			while pygame.sprite.spritecollide(self, self.game.allwalls, False):
-				self.rect.y -= int(abs(dy) / dy)
+
+			if pygame.sprite.spritecollide(self, self.game.allwalls, False):
+				if self.forced_direction == [0, 0]:
+					if dx <= 0:
+						self.forced_direction = [-1, 0]
+					else:
+						self.forced_direction = [1, 0]
+					self.last_forced = time.time()
+				while pygame.sprite.spritecollide(self, self.game.allwalls, False):
+					self.rect.y -= int(abs(dy) / dy)
 
 	def get_angle_of_rotation(self):
-		alpha = None
 		hor, vert = self.get_dxdy()
 
-		if (hor, vert) != (0, 0):
-			hyp = math.sqrt((hor**2) + (vert**2))
-			ratio = vert / hyp
-			
-			if hor >= 0 and vert <= 0:
-				alpha = -math.asin(ratio) * 180 / math.pi
-			elif hor <= 0 and vert <= 0:
-				alpha = -(math.acos(ratio) * 180 / math.pi + 90)
-			elif hor <= 0 and vert >= 0:
-				alpha = math.asin(ratio) * 180 / math.pi + 180
-			elif hor >= 0 and vert >= 0:
-				alpha = math.acos(ratio) * 180 / math.pi + 270
+		if (hor, vert) == (0, 0):
+			return self.angle
 
-			alpha = int(alpha) % 360
+		hyp = math.sqrt((hor**2) + (vert**2))
+		ratio = vert / hyp
+		
+		if hor >= 0 and vert <= 0:
+			alpha = -math.asin(ratio) * 180 / math.pi
+		elif hor <= 0 and vert <= 0:
+			alpha = -(math.acos(ratio) * 180 / math.pi + 90)
+		elif hor <= 0 and vert >= 0:
+			alpha = math.asin(ratio) * 180 / math.pi + 180
+		elif hor >= 0 and vert >= 0:
+			alpha = math.acos(ratio) * 180 / math.pi + 270
+
+		alpha = int(alpha) % 360
 
 		return alpha
 
-	"""
+
 	def rotate(self):
 		alpha = self.get_angle_of_rotation()
 
-		if alpha is not None:
-			# Forcibly scale to normal size when rotating by multiples of 90deg because rotozoom enlarges sprite by 2px when rotating
-			# by either 180deg or 270deg for some unknown reason
-			oldcenter = self.rect.center
-			if not(alpha % 90):
-				self.image = pygame.transform.rotate(Zombie.IMG, alpha)
-				self.image = pygame.transform.scale(self.image, (40, 40))
-			else:
-				self.image = pygame.transform.rotozoom(Zombie.IMG, alpha, 1)
-			self.rect = self.image.get_rect(center=oldcenter)
-			self.angle = alpha
+		if alpha == self.angle:
+			return
 
-			# Adjust rotation so that it doesn't collide with blocks
-			new_alpha = alpha
-			while pygame.sprite.spritecollide(self, self.game.allwalls, False):
-				# Decide whether to revert clockwise or counterclockwise
-				if (abs(alpha - self.angle)) < 180:
-					new_alpha = (new_alpha - 1) % 360
-				else:
-					new_alpha = (new_alpha + 1) % 360
-				
-				if not(new_alpha % 90):
-					self.image = pygame.transform.rotate(Zombie.IMG, new_alpha)
-					self.image = pygame.transform.scale(self.image, (40, 40))
-				else:
-					self.image = pygame.transform.rotozoom(Zombie.IMG, alpha, 1)
-				self.rect = self.image.get_rect(center=oldcenter)	
-				self.angle = new_alpha
-	"""
+		difference = alpha - self.angle
+		direction = abs(difference) / difference
 
-	def rotate(self):
-		# Idea: instead of turning the zombies instantenously, only rotate them by one degree towards the player;
-		# this saves a lot of recalculating to avoid wall collisions as they can be simpyly reverted once instead of
-		# up to 180 times per rotation per zombie
-		# This should make the zombies appear to turn more slowly in line with their character
-		alpha = self.get_angle_of_rotation()
-		if alpha and alpha != self.angle:
-			difference = alpha - self.angle
-			direction = abs(difference) / difference
+		# Flip direction if angle is over 180deg
+		if abs(difference) > 180:	
+			direction *= -1
 
-			# Flip direction if angle is over 180deg
-			if abs(difference) > 180:	
-				direction *= -1
-
-			# Handle cases near 0deg
-			if abs(difference) > 360 - Zombie.MAX_ROTATION:
-				direction *= (360 - abs(difference))
-			elif abs(difference) >= Zombie.MAX_ROTATION:
-				direction *= Zombie.MAX_ROTATION
-			else:
-				direction *= abs(difference)
+		# Handle cases near 0deg
+		if abs(difference) > 360 - Zombie.MAX_ROTATION:
+			direction *= (360 - abs(difference))
+		elif abs(difference) >= Zombie.MAX_ROTATION:
+			direction *= Zombie.MAX_ROTATION
 		else:
-			direction = 0
+			direction *= abs(difference)
 
 		# Rotate
 		new_angle = (self.angle + direction) % 360
